@@ -9,6 +9,7 @@ import base64
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.backends import default_backend
+from cryptography.fernet import Fernet
 
 WIKI_API_URL = "https://en.wikipedia.org/w/api.php"
 
@@ -116,7 +117,7 @@ def get_user_key():
     key = base64.urlsafe_b64encode(kdf.derive(password))
     return key
 
-def save_article(title, content, folder="articles", fmt="txt"):
+def save_article(title, content, folder="articles", fmt="txt", fernet_key=None):
     """Save article content to a file in the specified format.
     
     Args:
@@ -124,6 +125,7 @@ def save_article(title, content, folder="articles", fmt="txt"):
         content (str): Article content.
         folder (str): Folder to save the file.
         fmt (str): File format ('txt', 'html', 'md').
+        fernet_key (bytes or None): Encryption key for encrypting content.
     """
     safe_title = sanitize_filename(title)
     os.makedirs(folder, exist_ok=True)
@@ -134,7 +136,8 @@ def save_article(title, content, folder="articles", fmt="txt"):
     elif fmt == "md":
         content = f"# {title}\n\n{content}"
 
-    key = get_user_key()
+    if fernet_key:
+        content = Fernet(fernet_key).encrypt(content.encode()).decode()
 
     try:
         with open(filename, "w", encoding="utf-8") as f:
@@ -167,7 +170,12 @@ def main():
     if not folder:
         folder = "articles"
 
-    save_article(title, content, folder, fmt)
+    encrypt_choice = input("Would you like to encrypt the saved files? [y/N]: ").strip().lower()
+    encrypt_files = encrypt_choice == 'y'
+
+    fernet_key = get_user_key() if encrypt_files else None
+
+    save_article(title, content, folder, fmt, fernet_key=fernet_key)
 
     links = fetch_links(title)
     print(f"[→] Found {len(links)} internal article links.")
@@ -200,7 +208,7 @@ def main():
                 try:
                     linked_title, linked_content = future.result()
                     if linked_content:
-                        save_article(linked_title, linked_content, folder, fmt)
+                        save_article(linked_title, linked_content, folder, fmt, fernet_key=fernet_key)
                 except Exception as e:
                     print(f"[{i}/{len(links)}] ❌ Error fetching {link}: {e}")
 
