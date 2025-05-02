@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import os
 import re
@@ -152,13 +153,26 @@ def main():
         print(f"   - {link}")
 
     choice = input("Would you like to crawl and save linked articles? [y/N]: ").strip().lower()
-    if choice == "y":
-        for i, link in enumerate(links, 1):
-            print(f"[{i}/{len(links)}] Crawling: {link}")
-            linked_title, linked_content = fetch_article(link)
-            if linked_content:
-                save_article(linked_title, linked_content, folder, fmt)
-            time.sleep(1)  # Sleep to prevent hitting rate limits
+       if choice == "y":
+        cpu_count = os.cpu_count() or 2
+        if cpu_count < 4:
+            max_threads = 2
+        else:
+            max_threads = min(10, cpu_count * 2)
+
+        print(f"[ℹ️] Using up to {max_threads} threads for crawling.")
+
+        with ThreadPoolExecutor(max_workers=max_threads) as executor:
+            futures = {executor.submit(fetch_article, link): link for link in links}
+            for i, future in enumerate(as_completed(futures), 1):
+                link = futures[future]
+                try:
+                    linked_title, linked_content = future.result()
+                    if linked_content:
+                        save_article(linked_title, linked_content, folder, fmt)
+                    print(f"[{i}/{len(links)}] ✓ {link}")
+                except Exception as e:
+                    print(f"[{i}/{len(links)}] ❌ Error fetching {link}: {e}")
 
 if __name__ == "__main__":
     main()
