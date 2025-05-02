@@ -13,17 +13,10 @@ from cryptography.fernet import Fernet
 
 WIKI_API_URL = "https://en.wikipedia.org/w/api.php"
 
-# === API FETCHING ===
+# this is where the API gets called
 
 def fetch_article(title):
-    """Fetch the article content by title from Wikipedia API.
-    
-    Args:
-        title (str): The title of the Wikipedia article.
-        
-    Returns:
-        tuple: (article title, article content) if found, else (None, None).
-    """
+    """Try to fetch a Wikipedia article's content by its title."""
     params = {
         "action": "query",
         "format": "json",
@@ -31,22 +24,22 @@ def fetch_article(title):
         "titles": title,
         "explaintext": True,
     }
+
     try:
         response = requests.get(WIKI_API_URL, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
     except (requests.RequestException, ValueError) as e:
-        print(f"❌ Error fetching article '{title}': {e}")
+        print(f"[ERROR] Error fetching article '{title}': {e}")
         return None, None
 
-    if "query" not in data or "pages" not in data["query"]:
-        print(f"❌ Unexpected API response structure when fetching article '{title}'.")
+    # Grab the page content from the response
+    try:
+        page = next(iter(data["query"]["pages"].values()))
+        return page["title"], page.get("extract", "")
+    except (KeyError, StopIteration):
+        print(f"[ERROR] Unexpected response structure for '{title}'.")
         return None, None
-
-    page = next(iter(data["query"]["pages"].values()))
-    if "extract" in page and "title" in page:
-        return page["title"], page["extract"]
-    return None, None
 
 def fetch_links(title):
     """Fetch internal links from the Wikipedia article.
@@ -76,11 +69,11 @@ def fetch_links(title):
             response.raise_for_status()
             data = response.json()
         except (requests.RequestException, ValueError) as e:
-            print(f"❌ Error fetching links for '{title}': {e}")
+            print(f"[ERROR] Error fetching links for '{title}': {e}")
             break
 
         if "query" not in data or "pages" not in data["query"]:
-            print(f"❌ Unexpected API response structure when fetching links for '{title}'.")
+            print(f"[ERROR] Unexpected API response structure when fetching links for '{title}'.")
             break
 
         page = next(iter(data["query"]["pages"].values()))
@@ -96,7 +89,7 @@ def fetch_links(title):
 
     return links
 
-# === FILE SAVING ===
+# This is the file saving section
 
 def sanitize_filename(title):
     """Sanitize the filename by replacing non-alphanumeric characters with underscores."""
@@ -118,8 +111,8 @@ def get_user_key():
     return key
 
 def save_article(title, content, folder="articles", fmt="txt", fernet_key=None):
-    """Save article content to a file in the specified format.
-    
+    """Save the article to a file — optionally as .txt, .html, or .md — and encrypt if needed.
+
     Args:
         title (str): Article title.
         content (str): Article content.
@@ -142,11 +135,11 @@ def save_article(title, content, folder="articles", fmt="txt", fernet_key=None):
     try:
         with open(filename, "w", encoding="utf-8") as f:
             f.write(content)
-        print(f"[✓] Saved article as '{filename}'")
+        print(f"[SUCCESS] Saved article as '{filename}'")
     except OSError as e:
-        print(f"❌ Error saving article '{title}': {e}")
+        print(f"[ERROR] Error saving article '{title}': {e}")
 
-# === MAIN LOGIC ===
+# main logic area
 
 def main():
     """Main program logic for crawling Wikipedia articles."""
@@ -154,12 +147,12 @@ def main():
         subject = input("Enter a Wikipedia topic: ").strip()
         if subject:
             break
-        print("❌ Topic cannot be empty. Please enter a valid Wikipedia topic.")
+        print("[ERROR] Topic cannot be empty. Please enter a valid Wikipedia topic.")
 
     title, content = fetch_article(subject)
 
     if not content:
-        print("❌ Article not found.")
+        print("[ERROR] Article not found.")
         return
 
     fmt = input("Choose a file format (txt/html/md) [txt]: ").strip().lower()
@@ -178,7 +171,7 @@ def main():
     save_article(title, content, folder, fmt, fernet_key=fernet_key)
 
     links = fetch_links(title)
-    print(f"[→] Found {len(links)} internal article links.")
+    print(f"[INFO] Found {len(links)} internal article links.")
     for link in links[:10]:  # Show first 10 as preview
         print(f"   - {link}")
 
@@ -197,7 +190,7 @@ def main():
         else:
             max_threads = min(10, cpu_count * 2)
 
-        print(f"[ℹ️] Using up to {max_threads} threads for crawling.")
+        print(f"[INFO] Using up to {max_threads} threads for crawling.")
 
         with ThreadPoolExecutor(max_workers=max_threads) as executor:
             futures = {executor.submit(fetch_article, link): link for link in links}
@@ -210,7 +203,7 @@ def main():
                     if linked_content:
                         save_article(linked_title, linked_content, folder, fmt, fernet_key=fernet_key)
                 except Exception as e:
-                    print(f"[{i}/{len(links)}] ❌ Error fetching {link}: {e}")
+                    print(f"[{i}/{len(links)}] [ERROR] Error fetching {link}: {e}")
 
 if __name__ == "__main__":
     main()
