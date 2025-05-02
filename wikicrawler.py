@@ -4,6 +4,11 @@ import requests
 import os
 import re
 import time
+import getpass
+import base64
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.backends import default_backend
 
 WIKI_API_URL = "https://en.wikipedia.org/w/api.php"
 
@@ -97,6 +102,20 @@ def sanitize_filename(title):
     safe_title = re.sub(r'[^A-Za-z0-9]+', '_', title).strip('_')
     return safe_title or "article"
 
+def get_user_key():
+    """Derive a cryptographic key from a user-supplied password using PBKDF2HMAC."""
+    password = getpass.getpass("Enter password for key derivation: ").encode()
+    salt = b'some_fixed_salt'  # In real use, use a secure random salt and store it
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=100000,
+        backend=default_backend()
+    )
+    key = base64.urlsafe_b64encode(kdf.derive(password))
+    return key
+
 def save_article(title, content, folder="articles", fmt="txt"):
     """Save article content to a file in the specified format.
     
@@ -114,6 +133,8 @@ def save_article(title, content, folder="articles", fmt="txt"):
         content = f"<html><body><h1>{title}</h1><p>{content.replace(chr(10), '<br>')}</p></body></html>"
     elif fmt == "md":
         content = f"# {title}\n\n{content}"
+
+    key = get_user_key()
 
     try:
         with open(filename, "w", encoding="utf-8") as f:
