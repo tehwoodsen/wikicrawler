@@ -1,0 +1,164 @@
+import requests
+import os
+import re
+import time
+
+WIKI_API_URL = "https://en.wikipedia.org/w/api.php"
+
+# === API FETCHING ===
+
+def fetch_article(title):
+    """Fetch the article content by title from Wikipedia API.
+    
+    Args:
+        title (str): The title of the Wikipedia article.
+        
+    Returns:
+        tuple: (article title, article content) if found, else (None, None).
+    """
+    params = {
+        "action": "query",
+        "format": "json",
+        "prop": "extracts",
+        "titles": title,
+        "explaintext": True,
+    }
+    try:
+        response = requests.get(WIKI_API_URL, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+    except (requests.RequestException, ValueError) as e:
+        print(f"❌ Error fetching article '{title}': {e}")
+        return None, None
+
+    if "query" not in data or "pages" not in data["query"]:
+        print(f"❌ Unexpected API response structure when fetching article '{title}'.")
+        return None, None
+
+    page = next(iter(data["query"]["pages"].values()))
+    if "extract" in page and "title" in page:
+        return page["title"], page["extract"]
+    return None, None
+
+def fetch_links(title):
+    """Fetch internal links from the Wikipedia article.
+    
+    Args:
+        title (str): The title of the Wikipedia article.
+        
+    Returns:
+        list: List of linked article titles.
+    """
+    links = []
+    plcontinue = None
+
+    while True:
+        params = {
+            "action": "query",
+            "format": "json",
+            "prop": "links",
+            "titles": title,
+            "pllimit": "max",
+        }
+        if plcontinue:
+            params["plcontinue"] = plcontinue
+
+        try:
+            response = requests.get(WIKI_API_URL, params=params, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+        except (requests.RequestException, ValueError) as e:
+            print(f"❌ Error fetching links for '{title}': {e}")
+            break
+
+        if "query" not in data or "pages" not in data["query"]:
+            print(f"❌ Unexpected API response structure when fetching links for '{title}'.")
+            break
+
+        page = next(iter(data["query"]["pages"].values()))
+
+        if "links" in page:
+            # Exclude Help pages
+            links.extend(link["title"] for link in page["links"] if not link["title"].startswith("Help:"))
+
+        if "continue" in data and "plcontinue" in data["continue"]:
+            plcontinue = data["continue"]["plcontinue"]
+        else:
+            break
+
+    return links
+
+# === FILE SAVING ===
+
+def sanitize_filename(title):
+    """Sanitize the filename by replacing non-alphanumeric characters with underscores."""
+    safe_title = re.sub(r'[^A-Za-z0-9]+', '_', title).strip('_')
+    return safe_title or "article"
+
+def save_article(title, content, folder="articles", fmt="txt"):
+    """Save article content to a file in the specified format.
+    
+    Args:
+        title (str): Article title.
+        content (str): Article content.
+        folder (str): Folder to save the file.
+        fmt (str): File format ('txt', 'html', 'md').
+    """
+    safe_title = sanitize_filename(title)
+    os.makedirs(folder, exist_ok=True)
+    filename = os.path.join(folder, f"{safe_title}.{fmt}")
+
+    if fmt == "html":
+        content = f"<html><body><h1>{title}</h1><p>{content.replace(chr(10), '<br>')}</p></body></html>"
+    elif fmt == "md":
+        content = f"# {title}\n\n{content}"
+
+    try:
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(content)
+        print(f"[✓] Saved article as '{filename}'")
+    except OSError as e:
+        print(f"❌ Error saving article '{title}': {e}")
+
+# === MAIN LOGIC ===
+
+def main():
+    """Main program logic for crawling Wikipedia articles."""
+    while True:
+        subject = input("Enter a Wikipedia topic: ").strip()
+        if subject:
+            break
+        print("❌ Topic cannot be empty. Please enter a valid Wikipedia topic.")
+
+    title, content = fetch_article(subject)
+
+    if not content:
+        print("❌ Article not found.")
+        return
+
+    fmt = input("Choose a file format (txt/html/md) [txt]: ").strip().lower()
+    if fmt not in ("txt", "html", "md"):
+        fmt = "txt"
+
+    folder = input("Enter folder name to save articles [articles]: ").strip()
+    if not folder:
+        folder = "articles"
+
+    save_article(title, content, folder, fmt)
+
+    links = fetch_links(title)
+    print(f"[→] Found {len(links)} internal article links.")
+    for link in links[:10]:  # Show first 10 as preview
+        print(f"   - {link}")
+
+    choice = input("Would you like to crawl and save linked articles? [y/N]: ").strip().lower()
+    if choice == "y":
+        for i, link in enumerate(links, 1):
+            print(f"[{i}/{len(links)}] Crawling: {link}")
+            linked_title, linked_content = fetch_article(link)
+            if linked_content:
+                save_article(linked_title, linked_content, folder, fmt)
+            time.sleep(1)  # Sleep to prevent hitting rate limits
+
+if __name__ == "__main__":
+    main()
