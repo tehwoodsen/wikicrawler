@@ -172,7 +172,9 @@ def main():
 
         with ThreadPoolExecutor(max_workers=max_threads) as executor:
             futures = {executor.submit(fetch_article, link): link for link in links}
-            for i, future in enumerate(tqdm(as_completed(futures), total=len(futures), desc="Crawling"), 1):
+            for i, future in enumerate(
+                tqdm(as_completed(futures), total=len(futures), desc="Crawling"), 1
+            ):
                 link = futures[future]
                 try:
                     linked_title, linked_content = future.result()
