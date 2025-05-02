@@ -1,0 +1,20 @@
+# Python cache and virtualenv
+__pycache__/
+*.py[cod]
+venv/
+
+# Build artifacts from PyInstaller
+build/
+dist/
+!dist/wikicrawler  # keep only the final single-file executable
+*.spec
+
+# macOS metadata
+.DS_Store
+
+# Encryption keys and certs
+*.key
+*.pem
+
+# Logs
+*.log
