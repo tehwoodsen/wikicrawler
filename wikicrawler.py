@@ -139,7 +139,7 @@ def save_article(title, content, folder="articles", fmt="txt", fernet_key=None):
     except OSError as e:
         print(f"[ERROR] Error saving article '{title}': {e}")
 
-# main logic area
+# main logic area of the applet
 
 def main():
     """Main program logic for crawling Wikipedia articles."""
