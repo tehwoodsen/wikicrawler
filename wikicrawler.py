@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
 import requests
 import os
 import re
@@ -152,8 +153,15 @@ def main():
     for link in links[:10]:  # Show first 10 as preview
         print(f"   - {link}")
 
+    max_links_input = input("How many linked articles would you like to crawl? [default 50, max 100]: ").strip()
+    try:
+        max_links = min(100, max(1, int(max_links_input)))
+    except ValueError:
+        max_links = 50
+    links = links[:max_links]
+
     choice = input("Would you like to crawl and save linked articles? [y/N]: ").strip().lower()
-       if choice == "y":
+    if choice == "y":
         cpu_count = os.cpu_count() or 2
         if cpu_count < 4:
             max_threads = 2
@@ -164,13 +172,12 @@ def main():
 
         with ThreadPoolExecutor(max_workers=max_threads) as executor:
             futures = {executor.submit(fetch_article, link): link for link in links}
-            for i, future in enumerate(as_completed(futures), 1):
+            for i, future in enumerate(tqdm(as_completed(futures), total=len(futures), desc="Crawling"), 1):
                 link = futures[future]
                 try:
                     linked_title, linked_content = future.result()
                     if linked_content:
                         save_article(linked_title, linked_content, folder, fmt)
-                    print(f"[{i}/{len(links)}] ✓ {link}")
                 except Exception as e:
                     print(f"[{i}/{len(links)}] ❌ Error fetching {link}: {e}")
 
